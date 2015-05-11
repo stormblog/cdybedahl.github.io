@@ -436,12 +436,12 @@ detours that might introduce something bad. In X.509, there is no such
 defined path. As long as there is <em>any</em> path of signed data between
 the endpoint and a root certificate, the endpoint is considered to be
 OK. As an example, nobody except Verisign (who controls <code>com.</code>) can
-create a signed DNSSEC delegation to <code>google.com.</code>, while not only can
-any of the 177 root CAs in the Mozilla bundle make a valid SSL
-certificate for <code>google.com</code>, anyone to whom those 177 roots have
-issued delegated CA certificates can as well. So in DNSSEC we have to
-trust Verisign, while for SSL we can't even tell <em>how many</em> entities
-we have to trust, much less who they are.</p>
+create a signed DNSSEC delegation to <code>google.com.</code>. In contrast, a
+valid SSL certificate for <code>google.com</code> can be created not only by any
+one of the 177 root CAs in the Mozilla bundle - but also by anyone to
+whom those 177 roots have issued delegated CA certificates. So in
+DNSSEC we have to trust Verisign, while for SSL we can't even tell
+<em>how many</em> entities we have to trust, much less who they are.</p>
 
 <p>Third, in DNSSEC an operator only extends trust to the level
 immediately below them. <code>com.</code> signs <code>google.com.</code>, but they cannot
