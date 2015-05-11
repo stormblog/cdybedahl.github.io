@@ -329,7 +329,144 @@ find in DNS is not fake.</p>
 <a id="the-problem" class="anchor" href="#the-problem" aria-hidden="true"><span class="octicon octicon-link"></span></a>The Problem</h2>
 
 <p>DNS was designed back when the Internet was a nice place, where
-everyone could be trusted to behave. </p>
+everyone could be trusted. This means that the only security in it is
+meant to protect against accidents, not against malice. Which in turn
+means that it's pretty easy for a malicious entity to corrupt the data
+in it. As a response to that, eventually <em>DNSSEC</em> was introduced. It
+adds cryptographic security to DNS. It also adds quite a bit of
+complexity, needs more network bandwidth and memory, and makes it
+vastly less forgiving of errors. Even so, I recommend that you use it
+if you can.</p>
+
+<h2>
+<a id="how-it-works" class="anchor" href="#how-it-works" aria-hidden="true"><span class="octicon octicon-link"></span></a>How it works</h2>
+
+<p>DNSSEC adds cryptographic signatures to DNS. Specifically, it signs
+what we call <em>RRsets</em>. An RRset is simply all the RRs in a node that
+have the same type and class but different data. All the <code>A</code> records,
+for example, or all the <code>NS</code> records. That is, exactly the sort of
+lump of information you can ask for. When DNSSEC is active (that is,
+the server supports it and the query is asking for it), every RRset
+gets one or more <em>signatures</em> sent along with it, in the form of
+<code>RRSIG</code> records. At the top level of the zone there is also one or
+more <code>DNSKEY</code> records, which contain the public half of public-key
+keys. The <code>DNSKEY</code> records are used to verify that the <code>RRSIG</code>
+signatures were made from the relevant RRset with the secret half of
+the public key.</p>
+
+<p>Take a moment to let that sink in. The zone has <code>DNSKEY</code> records,
+which can be used to cryptographically verify signatures of RR sets
+stored in <code>RRSIG</code> records.</p>
+
+<p>That's how it works <em>in</em> a zone. Delegation from one zone to another
+needs to be handled as well. This is done by adding a record type to
+the "shadow" node we talked about before, the one that has data about
+one zone but is actually stored in the servers of the parent zone.
+This new record type, which <em>only</em> exists in the "shadow" node, is
+called <code>DS</code>, for "delegation signer". It contains a cryptographic hash
+of a <code>DNSKEY</code> record in the child zone, and it is signed with the
+parent zone's key (or keys). So if we trust the parent, we can verify
+that one of the keys in the child is OK, and we can then use that key
+to verify that other records in the child are OK too.</p>
+
+<p>So how do we know if we can trust the parent? Well, we check <em>its</em>
+parent, and the delegation from it, of course. And so on up until we
+get to the root zone. For that, we have to add some information
+manually. It's called a <em>trust anchor</em>, and it basically is another
+public half of a key. You can get it from the
+<a href="https://www.iana.org/dnssec/files">Internet Assigned Numbers Authority</a>
+(IANA for short). Most DNSSEC-aware software today comes with it
+included, so you probably don't have to care about that, but it's nice
+to know where it comes from. That key is the root of all trust in
+DNSSEC, and needless to say it is handled <em>very</em> carefully.</p>
+
+<p>That is the skeleton of how DNSSEC works. There's a mind-boggling
+amount of detail that I've skipped over, like signature lifespans,
+choices of cryptographic algorithms and verified non-existence (how
+you can be cryptographically sure that a record does not exist). But
+if you understand the description above, you have a good grasp of
+where the trust in DNSSEC comes from.</p>
+
+<h2>
+<a id="advantages-and-disadvantages" class="anchor" href="#advantages-and-disadvantages" aria-hidden="true"><span class="octicon octicon-link"></span></a>Advantages and disadvantages</h2>
+
+<p>The one huge advantage of DNSSEC is that you can trust the information
+you get out of DNS. You can <em>know</em> that the IP address you just got is
+the one your bank published for its Internet banking web site, and not
+something the NSA or a Russian mob injected. This in turn enables
+other technologies that are just now being explored, like distributing
+SSL certificates via secure DNS in order to make pretty much
+everything on the Internet more secure.</p>
+
+<p>The main disadvantage of DNSSEC is its complete unforgiveness of
+mistakes. Traditional DNS is extremely resilient against doing things
+wrong. You can mess things up to an amazing degree, and things will
+still more or less work.</p>
+
+<p>Not so with DNSSEC. One of the things with DNSSEC is that if the
+crypto stuff doesn't verify properly, the data is treated as if it did
+not exist at all. Which means that if you get things wrong at the
+signing level, the entire zone vanishes from the Internet. There is no
+grey area. There is no "it sort of works" as with traditional DNS.
+Either it works, or the zone doesn't exist.</p>
+
+<p>Another drawback, although less significant, is that DNSSEC makes for
+quite a bit more network traffic. The response packet to an A query
+for <code>www.iis.se</code> is 55 bytes without DNSSEC, 221 bytes with it. That's
+a 400% increase. On the other hand, we're still talking <em>bytes</em>, not
+kilobytes or megabytes, so for most people the increase is just noise.
+But for a large hosting provider it can become significant.</p>
+
+<h2>
+<a id="dnssec-vs-x509" class="anchor" href="#dnssec-vs-x509" aria-hidden="true"><span class="octicon octicon-link"></span></a>DNSSEC vs. X.509</h2>
+
+<p>One criticism of DNSSEC that I've heard a couple of times is that it's
+just as bad as the X.509 certificates used in SSL, since both rely on
+a chain of verication back to a trusted source. I do not agree with
+that criticism, and I'll try to explain why.</p>
+
+<p>First, there is the number of trusted sources. DNSSEC has exactly one,
+the root trust anchor. The Mozilla root CA bundle at the time I write
+this has 177. If nothing else, it will be much more noticeable if a
+single source goes bad than if one out of almost two hundred does.</p>
+
+<p>Second, in DNSSEC the chain of trust is defined. The path of signed
+data must follow the path of delegation. There can be no unexpected
+detours that might introduce something bad. In X.509, there is no such
+defined path. As long as there is <em>any</em> path of signed data between
+the endpoint and a root certificate, the endpoint is considered to be
+OK. As an example, nobody except Verisign (who controls <code>com.</code>) can
+create a signed DNSSEC delegation to <code>google.com.</code>, while not only can
+any of the 177 root CAs in the Mozilla bundle make a valid SSL
+certificate for <code>google.com</code>, anyone to whom those 177 roots have
+issued delegated CA certificates can as well. So in DNSSEC we have to
+trust Verisign, while for SSL we can't even tell <em>how many</em> entities
+we have to trust, much less who they are.</p>
+
+<p>Third, in DNSSEC an operator only extends trust to the level
+immediately below them. <code>com.</code> signs <code>google.com.</code>, but they cannot
+sign <code>mail.google.com.</code>. In X.509, any root CA can create a
+certificate for any other name no matter how distant.</p>
+
+<p>Finally, since there can be only one trusted path to a domain, any
+manipulation will be highly noticeable. In X.509, adding another
+trusted path from a root CA to a certificate has no effect on any
+existing certificates for the same name. In DNSSEC, changing the
+signed delegation path means that the previous delegation stops
+working.</p>
+
+<p>In short, I personally trust DNSSEC a whole lot more than I trust
+X.509. You, of course, get to make your own choice.</p>
+
+<h1>
+<a id="thats-all-for-now" class="anchor" href="#thats-all-for-now" aria-hidden="true"><span class="octicon octicon-link"></span></a>That's all for now</h1>
+
+<p>I do hope that you now feel that you have a better understanding of
+how DNS works, and that when next you see someone asking how they can
+make a <code>CNAME</code> work only for some URL paths on their web site, you can
+give them an <em>informed</em> chewing out.</p>
+
+<p>Have fun out there in Internetland!</p>
       </section>
     </div>
 
